@@ -29,6 +29,7 @@ class DummyVecEnv(VecEnv):
         self.keys, shapes, dtypes = obs_space_info(obs_space)
 
         self.buf_obs = OrderedDict([(k, np.zeros((self.num_envs,) + tuple(shapes[k]), dtype=dtypes[k])) for k in self.keys])
+        self.buf_opp_obs = OrderedDict([(k, np.zeros((self.num_envs,) + tuple(shapes[k]), dtype=dtypes[k])) for k in self.keys])
         self.buf_dones = np.zeros((self.num_envs,), dtype=bool)
         self.buf_rews = np.zeros((self.num_envs,), dtype=np.float32)
         self.buf_infos = [{} for _ in range(self.num_envs)]
@@ -48,7 +49,8 @@ class DummyVecEnv(VecEnv):
                 self.buf_infos[env_idx]["terminal_observation"] = obs
                 obs = self.envs[env_idx].reset()
             self._save_obs(env_idx, obs)
-        return (self._obs_from_buf(), np.copy(self.buf_rews), np.copy(self.buf_dones), deepcopy(self.buf_infos))
+            self._save_opp_obs(env_idx, obs)
+        return (self._obs_from_buf(), self._obs_opp_from_buf(), np.copy(self.buf_rews), np.copy(self.buf_dones), deepcopy(self.buf_infos))
 
     def seed(self, seed: Optional[int] = None) -> List[Union[None, int]]:
         seeds = list()
@@ -60,7 +62,8 @@ class DummyVecEnv(VecEnv):
         for env_idx in range(self.num_envs):
             obs = self.envs[env_idx].reset()
             self._save_obs(env_idx, obs)
-        return self._obs_from_buf()
+            self._save_opp_obs(env_idx, obs)
+        return self._obs_from_buf(), self._obs_opp_from_buf()
 
     def close(self) -> None:
         for env in self.envs:
@@ -89,12 +92,22 @@ class DummyVecEnv(VecEnv):
     def _save_obs(self, env_idx: int, obs: VecEnvObs) -> None:
         for key in self.keys:
             if key is None:
-                self.buf_obs[key][env_idx] = obs
+                self.buf_obs[key][env_idx] = obs[0]
             else:
                 self.buf_obs[key][env_idx] = obs[key]
 
+    def _save_opp_obs(self, env_idx: int, obs: VecEnvObs) -> None:
+        for key in self.keys:
+            if key is None:
+                self.buf_opp_obs[key][env_idx] = obs[1]
+            else:
+                self.buf_opp_obs[key][env_idx] = obs[key]
+
     def _obs_from_buf(self) -> VecEnvObs:
         return dict_to_obs(self.observation_space, copy_obs_dict(self.buf_obs))
+
+    def _obs_opp_from_buf(self) -> VecEnvObs:
+        return dict_to_obs(self.observation_space, copy_obs_dict(self.buf_opp_obs))
 
     def get_attr(self, attr_name: str, indices: VecEnvIndices = None) -> List[Any]:
         """Return attribute from vectorized environment (see base class)."""

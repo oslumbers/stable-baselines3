@@ -67,6 +67,7 @@ class PPO(OnPolicyAlgorithm):
     def __init__(
         self,
         policy: Union[str, Type[ActorCriticPolicy]],
+        population,
         env: Union[GymEnv, str],
         learning_rate: Union[float, Schedule] = 3e-4,
         n_steps: int = 2048,
@@ -93,6 +94,7 @@ class PPO(OnPolicyAlgorithm):
 
         super(PPO, self).__init__(
             policy,
+            population,
             env,
             learning_rate=learning_rate,
             n_steps=n_steps,

@@ -2,6 +2,7 @@ import os
 from typing import Any, Callable, Dict, Optional, Type, Union
 
 import gym
+import highway_env
 
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 from stable_baselines3.common.monitor import Monitor
@@ -78,6 +79,22 @@ def make_vec_env(
         def _init():
             if isinstance(env_id, str):
                 env = gym.make(env_id, **env_kwargs)
+                env.config['render_agent'] = False
+                env.configure({
+                "controlled_vehicles": 2,
+                "observation": {
+                    "type": "MultiAgentObservation",
+                    "observation_config": {
+                    "type": "Kinematics",
+                    }
+                },
+                "action": {
+                    "type": "MultiAgentAction",
+                    "action_config": {
+                    "type": "DiscreteMetaAction",
+                    }
+                }
+})
             else:
                 env = env_id(**env_kwargs)
             if seed is not None:

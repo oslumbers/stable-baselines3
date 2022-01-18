@@ -52,6 +52,7 @@ class OnPolicyAlgorithm(BaseAlgorithm):
     def __init__(
         self,
         policy: Union[str, Type[ActorCriticPolicy]],
+        population,
         env: Union[GymEnv, str],
         learning_rate: Union[float, Schedule],
         n_steps: int,
@@ -76,6 +77,7 @@ class OnPolicyAlgorithm(BaseAlgorithm):
 
         super(OnPolicyAlgorithm, self).__init__(
             policy=policy,
+            population=population,
             env=env,
             policy_base=policy_base,
             learning_rate=learning_rate,
@@ -98,6 +100,7 @@ class OnPolicyAlgorithm(BaseAlgorithm):
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
         self.rollout_buffer = None
+        self.population = population
 
         if _init_setup_model:
             self._setup_model()
@@ -149,6 +152,7 @@ class OnPolicyAlgorithm(BaseAlgorithm):
         assert self._last_obs is not None, "No previous observation was provided"
         # Switch to eval mode (this affects batch norm / dropout)
         self.policy.set_training_mode(False)
+        self.population.collect_mode()
 
         n_steps = 0
         rollout_buffer.reset()
@@ -164,18 +168,25 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                 self.policy.reset_noise(env.num_envs)
 
             with th.no_grad():
+                p1_obs = np.array((self._last_obs[0][0], self._last_obs[1][0]))
+                p2_obs = np.array((self._last_obs[0][1], self._last_obs[1][1]))
                 # Convert to pytorch tensor or to TensorDict
-                obs_tensor = obs_as_tensor(self._last_obs, self.device)
+                obs_tensor = obs_as_tensor(p1_obs, self.device)
+                obs_tensor_opp = obs_as_tensor(p2_obs, self.device)
                 actions, values, log_probs = self.policy.forward(obs_tensor)
-            actions = actions.cpu().numpy()
+                actions_opp = self.population.mix_forward(obs_tensor_opp)
+            actions, actions_opp = actions.cpu().numpy(), actions_opp.cpu().numpy()
 
             # Rescale and perform action
             clipped_actions = actions
+            clipped_actions_opp = actions_opp
             # Clip the actions to avoid out of bound error
             if isinstance(self.action_space, gym.spaces.Box):
                 clipped_actions = np.clip(actions, self.action_space.low, self.action_space.high)
-
-            new_obs, rewards, dones, infos = env.step(clipped_actions)
+                clipped_actions_opp = np.clip(actions_opp, self.action_space.low, self.action_space.high)
+            joint_clipped_actions = [(clipped_actions[i], clipped_actions_opp[i]) for i in range(len(clipped_actions))]
+            new_obs, new_obs_opp, rewards, dones, infos = env.step(joint_clipped_actions)
+            new_obs = (new_obs, new_obs_opp)
 
             self.num_timesteps += env.num_envs
 
@@ -204,13 +215,13 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                         terminal_value = self.policy.predict_values(terminal_obs)[0]
                     rewards[idx] += self.gamma * terminal_value
 
-            rollout_buffer.add(self._last_obs, actions, rewards, self._last_episode_starts, values, log_probs)
+            rollout_buffer.add(self._last_obs[0], actions, rewards, self._last_episode_starts, values, log_probs)
             self._last_obs = new_obs
             self._last_episode_starts = dones
 
         with th.no_grad():
             # Compute value for the last timestep
-            values = self.policy.predict_values(obs_as_tensor(new_obs, self.device))
+            values = self.policy.predict_values(obs_as_tensor(new_obs[0], self.device))
 
         rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
 

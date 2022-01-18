@@ -86,6 +86,7 @@ class BaseAlgorithm(ABC):
     def __init__(
         self,
         policy: Type[BasePolicy],
+        population,
         env: Union[GymEnv, str, None],
         policy_base: Type[BasePolicy],
         learning_rate: Union[float, Schedule],
@@ -129,6 +130,7 @@ class BaseAlgorithm(ABC):
         self.action_noise = None  # type: Optional[ActionNoise]
         self.start_time = None
         self.policy = None
+        self.population = None
         self.learning_rate = learning_rate
         self.tensorboard_log = tensorboard_log
         self.lr_schedule = None  # type: Optional[Schedule]
